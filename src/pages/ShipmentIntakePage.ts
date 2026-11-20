@@ -10,7 +10,7 @@ export class ShipmentIntakePage {
 
   constructor(page: Page) {
     this.page = page;
-    // TODO FOR LEARNER: Replace these brittle CSS/XPath selectors with resilient getByRole / getByLabel locators
+    // TODO FOR LEARNER: Replace brittle CSS/XPath locators below with getByRole and getByLabel
     this.newShipmentButton = page.locator('div.toolbar > button.btn-primary:nth-child(1)');
     this.originInput = page.locator('//form[@id="shipment-form"]//input[1]');
     this.destinationInput = page.locator('//form[@id="shipment-form"]//input[2]');
@@ -27,9 +27,6 @@ export class ShipmentIntakePage {
   }
 
   async expectShipmentQueued(origin: string, destination: string) {
-    // TODO FOR LEARNER: Assert the manifest row displays both origin/destination and the DISPATCH_QUEUED badge
-    const row = this.page.getByRole('row', { name: new RegExp(`${origin}.*${destination}`, 'i') });
-    await expect(row).toBeVisible();
-    await expect(row.getByText('DISPATCH_QUEUED')).toBeVisible();
+    // TODO FOR LEARNER: Locate the row matching origin and destination, assert it is visible, and assert DISPATCH_QUEUED is visible
   }
 }
