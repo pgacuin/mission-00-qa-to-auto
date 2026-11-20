@@ -1,0 +1,15 @@
+{
+  "name": "logistream-enterprise-qa",
+  "version": "1.0.0",
+  "description": "LogiStream Enterprise SFIA-aligned QA Automation lab exercises and validators",
+  "scripts": {
+    "test": "playwright test",
+    "typecheck": "tsc --noEmit",
+    "validate:m00": "ts-node scripts/validate-mission-00.ts"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.48.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.6.0"
+  }
+}
