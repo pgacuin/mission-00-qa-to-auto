@@ -2,125 +2,210 @@ import fs from 'fs';
 import path from 'path';
 import { execSync } from 'child_process';
 
-console.log('====================================================');
-console.log('  LogiStream QA Lab - Universal Validator');
-console.log('====================================================\n');
+console.log('============================================================');
+console.log('  LogiStream QA Lab - Mission 00 Bridge Validator');
+console.log('============================================================\n');
+
+const rootDir = path.join(__dirname, '..');
+const stateDir = path.join(rootDir, '.lab-state');
+const attemptFilePath = path.join(stateDir, 'mission-00-attempts.json');
+const maxRecommendedAttempts = 6;
+
+fs.mkdirSync(stateDir, { recursive: true });
+
+interface AttemptRecord {
+  attempts: number;
+  passed: boolean;
+  lastRunAt: string;
+  history: Array<{
+    attempt: number;
+    timestamp: string;
+    score: number;
+    status: string;
+  }>;
+}
+
+let record: AttemptRecord = {
+  attempts: 0,
+  passed: false,
+  lastRunAt: '',
+  history: []
+};
+
+if (fs.existsSync(attemptFilePath)) {
+  try {
+    record = JSON.parse(fs.readFileSync(attemptFilePath, 'utf8'));
+  } catch {
+    record = { attempts: 0, passed: false, lastRunAt: '', history: [] };
+  }
+}
+
+record.attempts += 1;
+const currentAttempt = record.attempts;
+const timestamp = new Date().toISOString();
+record.lastRunAt = timestamp;
+
+console.log(`📊 Attempt #${currentAttempt}`);
+if (currentAttempt > maxRecommendedAttempts) {
+  console.log(
+    `⚠️  Soft Warning: You have used ${currentAttempt} attempts (recommended max: ${maxRecommendedAttempts}). Double-check selectors, assertions, and triage decisions.`
+  );
+}
+console.log('');
+
+function saveAndExit(score: number, totalPoints: number, status: string, exitCode: number): never {
+  record.passed = exitCode === 0;
+  record.history.push({
+    attempt: currentAttempt,
+    timestamp,
+    score,
+    status
+  });
+  fs.writeFileSync(attemptFilePath, JSON.stringify(record, null, 2) + '\n');
+  console.log(`\nFINAL SCORE: ${score} / ${totalPoints} (Attempt #${currentAttempt})`);
+  process.exit(exitCode);
+}
 
 let score = 0;
 const totalPoints = 100;
 
-const rootDir = path.join(__dirname, '..');
-
-// Determine active mission based on existing spec or workflow files
-const isMission08 = fs.existsSync(path.join(rootDir, 'tests/senior-release-gate.spec.ts'));
-const isMission07 = fs.existsSync(path.join(rootDir, 'tests/incident-simulation.spec.ts'));
-const isMission06 = fs.existsSync(path.join(rootDir, '.github/workflows/playwright-ci.yml'));
-const isMission05 = fs.existsSync(path.join(rootDir, 'tests/accessibility-contract.spec.ts'));
-const isMission04 = fs.existsSync(path.join(rootDir, 'tests/performance-budget.spec.ts'));
-const isMission03 = fs.existsSync(path.join(rootDir, 'tests/shipment-state-machine.spec.ts'));
-const isMission02 = fs.existsSync(path.join(rootDir, 'tests/customs-uat.spec.ts'));
-const isMission00 = fs.existsSync(path.join(rootDir, 'tests/manual-to-auto-tc101.spec.ts'));
-
-let missionName = 'Mission 01';
-let specFile = 'tests/dispatch-dashboard.spec.ts';
-
-if (isMission08) {
-  missionName = 'Mission 08 (Senior Release Gate)';
-  specFile = 'tests/senior-release-gate.spec.ts';
-} else if (isMission07) {
-  missionName = 'Mission 07 (Capstone)';
-  specFile = 'tests/incident-simulation.spec.ts';
-} else if (isMission06) {
-  missionName = 'Mission 06';
-  specFile = 'tests/dispatch-dashboard.spec.ts';
-} else if (isMission05) {
-  missionName = 'Mission 05';
-  specFile = 'tests/accessibility-contract.spec.ts';
-} else if (isMission04) {
-  missionName = 'Mission 04';
-  specFile = 'tests/performance-budget.spec.ts';
-} else if (isMission03) {
-  missionName = 'Mission 03';
-  specFile = 'tests/shipment-state-machine.spec.ts';
-} else if (isMission02) {
-  missionName = 'Mission 02';
-  specFile = 'tests/customs-uat.spec.ts';
-} else if (isMission00) {
-  missionName = 'Mission 00 (QA-to-Automation Bridge)';
-  specFile = 'tests/manual-to-auto-tc101.spec.ts';
-}
-
-console.log(`🎯 Active Mission Detected: ${missionName}\n`);
-
-// Common configuration checks
+const triagePath = path.join(rootDir, 'docs/triage-matrix-TC-101.md');
+const pageObjectPath = path.join(rootDir, 'src/pages/ShipmentIntakePage.ts');
+const specPath = path.join(rootDir, 'tests/manual-to-auto-tc101.spec.ts');
 const tsConfigPath = path.join(rootDir, 'tsconfig.json');
-if (!fs.existsSync(tsConfigPath)) {
-  console.error('❌ Missing required file: tsconfig.json');
-  process.exit(1);
-}
 
-// Check for TODOs or hardcoded waits across src, tests, and docs
-function scanDirectory(dir: string, checkWaits: boolean) {
-  if (!fs.existsSync(dir)) return;
-  const files = fs.readdirSync(dir);
-  for (const file of files) {
-    const fullPath = path.join(dir, file);
-    if (fs.statSync(fullPath).isDirectory()) {
-      scanDirectory(fullPath, checkWaits);
-    } else if (fullPath.endsWith('.ts') || fullPath.endsWith('.md')) {
-      const content = fs.readFileSync(fullPath, 'utf8');
-      if (content.includes('TODO FOR LEARNER')) {
-        console.error(`❌ Incomplete implementation in ${path.relative(rootDir, fullPath)}: Remove all TODO markers.`);
-        process.exit(1);
-      }
-      if (checkWaits && fullPath.endsWith('.ts') && content.includes('waitForTimeout')) {
-        console.error(`❌ Anti-pattern detected in ${path.relative(rootDir, fullPath)}: Hardcoded page.waitForTimeout() is strictly forbidden.`);
-        process.exit(1);
-      }
-    }
+for (const requiredFile of [triagePath, pageObjectPath, specPath, tsConfigPath]) {
+  if (!fs.existsSync(requiredFile)) {
+    console.error(`❌ Missing required file: ${path.relative(rootDir, requiredFile)}`);
+    saveAndExit(score, totalPoints, 'MISSING_FILE', 1);
   }
 }
 
-scanDirectory(path.join(rootDir, 'src'), true);
-scanDirectory(path.join(rootDir, 'tests'), true);
-scanDirectory(path.join(rootDir, 'docs'), false);
+const triageContent = fs.readFileSync(triagePath, 'utf8');
+const pageObjectContent = fs.readFileSync(pageObjectPath, 'utf8');
+const specContent = fs.readFileSync(specPath, 'utf8');
 
-console.log('✅ All files complete and free of TODOs or hardcoded waits.');
-score += 30;
+// 1. Check for leftover TODOs and forbidden waitForTimeout (20 pts)
+const combinedCode = `${pageObjectContent}\n${specContent}`;
+if (
+  triageContent.includes('TODO FOR LEARNER') ||
+  pageObjectContent.includes('TODO FOR LEARNER') ||
+  specContent.includes('TODO FOR LEARNER')
+) {
+  console.error('❌ Found remaining "TODO FOR LEARNER" markers. Complete all tasks first.');
+  saveAndExit(score, totalPoints, 'UNFINISHED_TODOS', 1);
+}
 
-console.log('🔍 Running TypeScript compiler check (tsc --noEmit)...');
+if (combinedCode.includes('waitForTimeout')) {
+  console.error('❌ Anti-pattern detected: "waitForTimeout" is forbidden in Mission 00.');
+  saveAndExit(score, totalPoints, 'WAIT_FOR_TIMEOUT_DETECTED', 1);
+}
+score += 20;
+console.log('✅ [20/20] No TODO markers or waitForTimeout calls found.');
+
+// 2. Check Triage Matrix answers for TC-102 (API) and TC-103 (Manual) (20 pts)
+const rows = triageContent
+  .split('\n')
+  .map((line) => line.trim())
+  .filter((line) => line.startsWith('|') && !line.startsWith('| :---') && !line.includes('Test Scenario'));
+
+const tc102Row = rows.find((r) => r.includes('TC-102')) ?? '';
+const tc103Row = rows.find((r) => r.includes('TC-103')) ?? '';
+
+const tc102Cells = tc102Row.split('|').map((c) => c.trim()).filter(Boolean);
+const tc103Cells = tc103Row.split('|').map((c) => c.trim()).filter(Boolean);
+
+const hasValidTc102 =
+  tc102Cells.length >= 3 &&
+  /\bapi\b/i.test(tc102Cells[1]) &&
+  tc102Cells[2].length >= 15;
+
+const hasValidTc103 =
+  tc103Cells.length >= 3 &&
+  /\bmanual\b/i.test(tc103Cells[1]) &&
+  tc103Cells[2].length >= 15;
+
+if (!hasValidTc102 || !hasValidTc103) {
+  console.error('❌ Triage Matrix check failed:');
+  if (!hasValidTc102) {
+    console.error('   - TC-102 should target "API" with a clear engineering rationale.');
+  }
+  if (!hasValidTc103) {
+    console.error('   - TC-103 should target "Manual" with a clear engineering rationale.');
+  }
+  saveAndExit(score, totalPoints, 'TRIAGE_VALIDATION_FAILED', 1);
+}
+score += 20;
+console.log('✅ [20/20] Triage Matrix answers validated (TC-102 -> API, TC-103 -> Manual).');
+
+// 3. Check Page Object refactoring & Test Spec calls (20 pts)
+const forbiddenLocatorPatterns = [
+  'nth-child(',
+  '//form',
+  'form-control-sm',
+  'btn-success',
+  'div.toolbar'
+];
+
+const hasForbiddenLocator = forbiddenLocatorPatterns.some((pattern) =>
+  pageObjectContent.includes(pattern)
+);
+
+const hasSemanticLocators =
+  pageObjectContent.includes('getByRole(') &&
+  pageObjectContent.includes('getByLabel(') &&
+  pageObjectContent.includes("getByRole('row'");
+
+const hasSpecFlow =
+  specContent.includes('createShipment(') &&
+  specContent.includes('expectShipmentQueued(');
+
+if (hasForbiddenLocator || !hasSemanticLocators || !hasSpecFlow) {
+  console.error('❌ Automation refactoring check failed:');
+  if (hasForbiddenLocator) {
+    console.error('   - Remove brittle CSS/XPath locators from ShipmentIntakePage.ts.');
+  }
+  if (!hasSemanticLocators) {
+    console.error('   - Use getByRole, getByLabel, and getByRole("row") in ShipmentIntakePage.ts.');
+  }
+  if (!hasSpecFlow) {
+    console.error('   - Call both createShipment(...) and expectShipmentQueued(...) in manual-to-auto-tc101.spec.ts.');
+  }
+  saveAndExit(score, totalPoints, 'REFACTORING_CHECK_FAILED', 1);
+}
+score += 20;
+console.log('✅ [20/20] Semantic locators, Page Object assertions, and spec flow verified.');
+
+// 4. Strict TypeScript type-checking (15 pts)
+console.log('🔍 Running TypeScript compiler check (npx tsc --noEmit)...');
 try {
   execSync('npx tsc --noEmit', { stdio: 'inherit' });
-  console.log('✅ TypeScript strict type-checking passed.');
-  score += 20;
+  score += 15;
+  console.log('✅ [15/15] TypeScript strict type-checking passed.');
 } catch {
   console.error('❌ TypeScript compilation failed.');
-  process.exit(1);
+  saveAndExit(score, totalPoints, 'TSC_FAILED', 1);
 }
 
-console.log(`\n🚀 Executing Playwright Test Suite for ${missionName}...`);
+// 5. Execute Playwright test (25 pts)
+console.log('\n🚀 Running Playwright test for Mission 00...');
 try {
-  execSync(`npx playwright test ${specFile}`, { stdio: 'inherit' });
-  score += 50;
+  execSync('npx playwright test tests/manual-to-auto-tc101.spec.ts', { stdio: 'inherit' });
+  score += 25;
+  console.log('✅ [25/25] Playwright test passed.');
 } catch {
-  console.error(`\n❌ Playwright test execution failed for ${missionName}.`);
+  console.error('\n❌ Playwright test execution failed.');
+  saveAndExit(score, totalPoints, 'PLAYWRIGHT_FAILED', 1);
 }
 
-console.log(`\n====================================================`);
-console.log(`  FINAL GRADE: ${score} / ${totalPoints}`);
-console.log(`====================================================`);
+console.log('\n============================================================');
+console.log(`  MISSION 00 PASSED: ${score} / ${totalPoints}`);
+console.log('============================================================');
+console.log('🏅 SFIA Competency Codes Achieved (SUCCESSFUL):');
+console.log('   • TEST — Testing (SFIA Level 3)');
+console.log('   • METL — Methods and tools (SFIA Level 3)');
+console.log('   • PRTS — Performance testing (SFIA Level 2–3)');
+console.log('   • RELM — Release management (SFIA Level 2–3)');
+console.log('============================================================');
 
-if (score === 100) {
-  if (isMission08) {
-    console.log('\n🏆 MISSION 08 (SENIOR RELEASE GATE) ACHIEVED (SFIA LEVEL 4–5 CERTIFIED) 🚀');
-  } else if (isMission07) {
-    console.log('\n🏆 FULL MID-LEVEL CURRICULUM COMPLETED: SFIA LEVEL 3–4 CERTIFIED! 🚀');
-  } else if (isMission00) {
-    console.log('\n🏆 MISSION 00 (QA-TO-AUTOMATION BRIDGE) ACHIEVED — READY FOR MISSION 01! 🚀');
-  } else {
-    console.log(`\n🏆 ${missionName.toUpperCase()} ACHIEVED (SFIA Level 3–4)`);
-  }
-  process.exit(0);
-} else {
-  process.exit(1);
-}
+saveAndExit(score, totalPoints, 'PASSED', 0);
