@@ -7,7 +7,7 @@ test.describe('QA-to-Automation Bridge: Converting Manual TC-101 (TEST, METL)', 
 
     await page.goto('/dispatch');
 
-    // TODO FOR LEARNER: Replace the manual sleep below with clean Page Object calls (createShipment + expectShipmentQueued)
+    // TODO FOR LEARNER: Remove waitForTimeout below and call intakePage.createShipment(...) and intakePage.expectShipmentQueued(...)
     await page.waitForTimeout(3000);
   });
 });
